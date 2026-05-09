@@ -50,8 +50,6 @@ The process:
 7. Change BIOS boot order, first boot
 8. SSH in to unlock LUKS, system boots headless
 
-After first boot, you can optionally add TPM2 auto-unlock, Secure Boot, and further hardening (covered in the companion `zimaboard2-physical-security-hardening.md`).
-
 ---
 
 ## 2. Prerequisites
@@ -59,7 +57,7 @@ After first boot, you can optionally add TPM2 auto-unlock, Secure Boot, and furt
 ### Hardware
 
 - ZimaBoard 2 (any SKU)
-- Samsung 990 Pro NVMe SSD (2280 M-key)
+- Samsung 990 Pro NVMe SSD (2280 M-key) or any external USB SSD.
 - **PCIe-to-M.2 NVMe adapter card** — the ZimaBoard's PCIe slot is a standard desktop-style PCIe x4 slot, NOT an M.2 slot. You need an adapter. Zima sells one, or any generic PCIe x4 to M.2 M-key adapter works.
 - A way to connect the NVMe to your workstation: M.2 slot on the motherboard, or USB-to-NVMe enclosure
 - Mini DisplayPort to HDMI adapter + monitor + USB keyboard — **required for first boot** to change BIOS boot order. No serial console or IPMI available on ZimaBoard 2.
@@ -284,13 +282,13 @@ sudo umount /mnt
 
 **Subvolume layout explained:**
 
-| Subvolume | Mountpoint | Purpose |
-|-----------|------------|---------|
-| `@` | `/` | Root filesystem |
-| `@home` | `/home` | User data (separate snapshot policy) |
-| `@snapshots` | `/.snapshots` | Snapshot storage |
-| `@var_log` | `/var/log` | Logs (exclude from root snapshots) |
-| `@var_cache` | `/var/cache` | Package cache (exclude from root snapshots) |
+| Subvolume    | Mountpoint    | Purpose                                     |
+| ------------ | ------------- | ------------------------------------------- |
+| `@`          | `/`           | Root filesystem                             |
+| `@home`      | `/home`       | User data (separate snapshot policy)        |
+| `@snapshots` | `/.snapshots` | Snapshot storage                            |
+| `@var_log`   | `/var/log`    | Logs (exclude from root snapshots)          |
+| `@var_cache` | `/var/cache`  | Package cache (exclude from root snapshots) |
 
 > **Why subvolumes?** When you snapshot `@` before a system update, you don't want gigabytes of package cache or logs in the snapshot. Separate subvolumes let you snapshot root cleanly. `@home` gets its own snapshot schedule.
 
@@ -629,11 +627,11 @@ systemctl enable sshd
 ### Set up SSH for your user
 
 ```bash
-mkdir -p /home/g/.ssh
-chmod 700 /home/g/.ssh
-echo "ssh-ed25519 AAAA... you@workstation" > /home/g/.ssh/authorized_keys
-chmod 600 /home/g/.ssh/authorized_keys
-chown -R g:g /home/g/.ssh
+mkdir -p /home/[user]/.ssh
+chmod 700 /home/[user]/.ssh
+echo "ssh-ed25519 AAAA... you@workstation" > /home/[user]/.ssh/authorized_keys
+chmod 600 /home/[user]/.ssh/authorized_keys
+chown -R g:g /home/[user]/.ssh
 ```
 
 ### Harden SSH
@@ -717,7 +715,6 @@ Gateway=192.168.100.1
 mkdir -p /etc/tinyssh/sshkeydir
 tinysshd-makekey /etc/tinyssh/sshkeydir
 ```
-
 
 > **If AUR installation is problematic in chroot** (GPG key issues, network problems), skip this step and install on first boot. First boot requires keyboard + monitor for passphrase entry. After installing tinyssh and rebuilding initramfs, subsequent boots are headless.
 
@@ -1108,12 +1105,13 @@ bash <(curl -fsSL https://raw.githubusercontent.com/omacom-io/omaterm/main/insta
 
 There are two UUIDs for an encrypted root. Confusing them causes `Timed out waiting for device /dev/disk/by-uuid/...` → cascade of `Dependency failed` → emergency mode.
 
-| UUID | Source | Used in |
-|------|--------|---------|
-| LUKS container | `blkid /dev/sdX2` (`TYPE="crypto_LUKS"`) | `crypttab.initramfs`, `/etc/kernel/cmdline`, `loader/entries/*.conf` |
-| Filesystem | `blkid /dev/mapper/root` (`TYPE="ext4"` or `"btrfs"`) | `fstab` (mount entries) |
+| UUID           | Source                                                | Used in                                                              |
+| -------------- | ----------------------------------------------------- | -------------------------------------------------------------------- |
+| LUKS container | `blkid /dev/sdX2` (`TYPE="crypto_LUKS"`)              | `crypttab.initramfs`, `/etc/kernel/cmdline`, `loader/entries/*.conf` |
+| Filesystem     | `blkid /dev/mapper/root` (`TYPE="ext4"` or `"btrfs"`) | `fstab` (mount entries)                                              |
 
 **Three files must all use the LUKS UUID:**
+
 1. `/etc/crypttab.initramfs` — tells `sd-encrypt` which device to unlock
 2. `/etc/kernel/cmdline` — gets **baked into the UKI** by `mkinitcpio`. If wrong here, the UKI boots with the wrong UUID even if `crypttab.initramfs` is correct
 3. `/boot/loader/entries/arch.conf` — fallback boot entry
